@@ -13,15 +13,28 @@ Important Guidelines:
 
 export async function POST(req) {
   try {
-    const { messages } = await req.json();
+    const { messages, context } = await req.json();
     
     if (!process.env.GEMINI_API_KEY) {
       return Response.json({ error: "Gemini API key is not configured." }, { status: 500 });
     }
 
+    let dynamicSystemInstruction = systemInstruction;
+
+    if (context) {
+      dynamicSystemInstruction += `\n\nUser's Recent Context:`;
+      if (context.mood) {
+        dynamicSystemInstruction += `\n- Current Mood: ${context.mood.label} (logged on ${new Date(context.mood.timestamp).toLocaleString()})`;
+      }
+      if (context.journal) {
+        dynamicSystemInstruction += `\n- Recent Journal Entry: "${context.journal.content}" (written on ${new Date(context.journal.timestamp).toLocaleString()})`;
+      }
+      dynamicSystemInstruction += `\nUse this context to be more empathetic and aware of their current state, but do not explicitly say "I see you logged a mood" unless it flows naturally in conversation.`;
+    }
+
     const model = genAI.getGenerativeModel({ 
       model: "gemini-3.5-flash",
-      systemInstruction: systemInstruction 
+      systemInstruction: dynamicSystemInstruction 
     });
 
     // Format history for Gemini API: requires role ('user' or 'model') and parts ([{ text: "..." }])
