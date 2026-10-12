@@ -25,7 +25,11 @@ export async function POST(req) {
       dynamicSystemInstruction += `\n\nUser's Recent Context:`;
       if (context.mood) {
         dynamicSystemInstruction += `\n- Current Mood: ${context.mood.label} (logged on ${new Date(context.mood.timestamp).toLocaleString()})`;
+        dynamicSystemInstruction += `\nIMPORTANT INSTRUCTION: The user has explicitly logged their mood as "${context.mood.label}". You MUST adapt your tone and response to reflect this mood. For example, if they are "Sad", be extra comforting. If they are "Angry", be de-escalating and understanding. If they are "Happy", match their positive energy.`;
+      } else {
+        dynamicSystemInstruction += `\nIMPORTANT INSTRUCTION: The user has not logged a recent mood. Use your default empathetic, calm, and supportive tone.`;
       }
+      
       if (context.journal) {
         dynamicSystemInstruction += `\n- Recent Journal Entry: "${context.journal.content}" (written on ${new Date(context.journal.timestamp).toLocaleString()})`;
       }
