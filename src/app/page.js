@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useState, useEffect } from "react";
 import { Smile, Loader2, Sparkles, ShieldCheck, HeartHandshake, Brain } from "lucide-react";
 import { auth, googleProvider, db } from "../firebase";
