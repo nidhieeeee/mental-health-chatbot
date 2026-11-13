@@ -16,6 +16,8 @@ import {
   getDocs,
   deleteDoc,
   doc,
+  setDoc,
+  updateDoc,
 } from "firebase/firestore";
 
 import Header from "@/components/Header";
@@ -66,13 +68,20 @@ export default function Home() {
           limit(30)
         );
         unsubMessages = onSnapshot(messagesQuery, (snapshot) => {
-          const msgs = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+          const msgs = snapshot.docs.map((d) => ({
+            id: d.id,
+            status: d.data().status || "sent",
+            ...d.data(),
+          }));
           if (msgs.length === 0) {
             setMessages([
               {
+                id: "welcome-message",
                 role: "model",
                 content:
                   "Welcome to MindMate. I'm your empathetic mental health and wellness companion. Whatever you are carrying today—stress, excitement, grief, or fatigue—this is your non-judgmental space to reflect. How are you feeling right now?",
+                status: "sent",
+                timestamp: Date.now(),
               },
             ]);
           } else {
@@ -140,13 +149,24 @@ export default function Home() {
     setIsLoading(true);
     setStreamingMessage("");
 
-    // Optimistically create new messages array for API
-    const userMsg = { role: "user", content: trimmedText, timestamp: Date.now() };
-    const apiMessages = [...messages, userMsg];
+    const messageId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const userMsg = {
+      id: messageId,
+      role: "user",
+      content: trimmedText,
+      timestamp: Date.now(),
+      status: "pending",
+    };
+
+    // Construct conversation history for API payload:
+    // Exclude the placeholder welcome message if other messages exist,
+    // and append this new user message.
+    const cleanHistory = messages.filter((m) => m.id !== "welcome-message");
+    const apiMessages = [...cleanHistory, userMsg];
 
     try {
-      // 1. Persist user message to Firestore
-      await addDoc(collection(db, "users", user.uid, "messages"), userMsg);
+      // 1. Persist user message to Firestore with pending status
+      await setDoc(doc(db, "users", user.uid, "messages", messageId), userMsg);
 
       // 2. Call streaming API
       const response = await fetch("/api/chat", {
@@ -160,7 +180,8 @@ export default function Home() {
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to generate response: ${response.statusText}`);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Failed to generate response: ${response.statusText}`);
       }
 
       // Check server crisis header
@@ -181,23 +202,126 @@ export default function Home() {
         setStreamingMessage(accumulatedText);
       }
 
-      // 3. Persist complete model response to Firestore
+      // 3. Update user message to 'sent'
+      await updateDoc(doc(db, "users", user.uid, "messages", messageId), {
+        status: "sent",
+        error: null,
+      });
+
+      // 4. Persist complete model response to Firestore
       if (accumulatedText.trim()) {
-        await addDoc(collection(db, "users", user.uid, "messages"), {
+        const modelMsgId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        await setDoc(doc(db, "users", user.uid, "messages", modelMsgId), {
+          id: modelMsgId,
           role: "model",
           content: accumulatedText.trim(),
           timestamp: Date.now(),
+          status: "sent",
         });
       }
     } catch (err) {
       console.error("Chat streaming error:", err);
-      // Fallback message
-      await addDoc(collection(db, "users", user.uid, "messages"), {
-        role: "model",
-        content:
-          "I'm having a temporary moment connecting. Please take a gentle breath and try messaging again.",
-        timestamp: Date.now(),
+      // Mark user message as failed with error details - DO NOT write a fake model response
+      try {
+        await updateDoc(doc(db, "users", user.uid, "messages", messageId), {
+          status: "failed",
+          error: err.message || "Failed to generate AI response.",
+        });
+      } catch (updateErr) {
+        console.error("Failed to update message status:", updateErr);
+      }
+    } finally {
+      setIsLoading(false);
+      setStreamingMessage("");
+    }
+  };
+
+  // Explicit Retry Handler for Failed Messages
+  const handleRetryMessage = async (failedMsg) => {
+    if (!failedMsg || !failedMsg.content || isLoading || !user) return;
+
+    if (containsCrisisSignals(failedMsg.content)) {
+      setShowCrisisBanner(true);
+    }
+
+    setIsLoading(true);
+    setStreamingMessage("");
+
+    try {
+      // 1. Update message status back to pending
+      await updateDoc(doc(db, "users", user.uid, "messages", failedMsg.id), {
+        status: "pending",
+        error: null,
       });
+
+      // 2. Build history strictly prior to this message
+      const msgIndex = messages.findIndex((m) => m.id === failedMsg.id);
+      const priorHistory = msgIndex !== -1 ? messages.slice(0, msgIndex) : [];
+      const cleanPriorHistory = priorHistory.filter((m) => m.id !== "welcome-message");
+      const apiMessages = [
+        ...cleanPriorHistory,
+        { ...failedMsg, status: "pending" },
+      ];
+
+      // 3. Call streaming API
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: apiMessages,
+          context: getRecentContext(),
+          stream: true,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Failed to generate response: ${response.statusText}`);
+      }
+
+      if (response.headers.get("X-Crisis-Detected") === "true") {
+        setShowCrisisBanner(true);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let accumulatedText = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        accumulatedText += chunk;
+        setStreamingMessage(accumulatedText);
+      }
+
+      // 4. Mark user message as sent
+      await updateDoc(doc(db, "users", user.uid, "messages", failedMsg.id), {
+        status: "sent",
+        error: null,
+      });
+
+      // 5. Persist complete model response
+      if (accumulatedText.trim()) {
+        const modelMsgId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        await setDoc(doc(db, "users", user.uid, "messages", modelMsgId), {
+          id: modelMsgId,
+          role: "model",
+          content: accumulatedText.trim(),
+          timestamp: Date.now(),
+          status: "sent",
+        });
+      }
+    } catch (err) {
+      console.error("Retry chat streaming error:", err);
+      try {
+        await updateDoc(doc(db, "users", user.uid, "messages", failedMsg.id), {
+          status: "failed",
+          error: err.message || "Failed to generate AI response.",
+        });
+      } catch (updateErr) {
+        console.error("Failed to update retry message status:", updateErr);
+      }
     } finally {
       setIsLoading(false);
       setStreamingMessage("");
@@ -373,6 +497,7 @@ export default function Home() {
             <ChatView
               messages={messages}
               onSendMessage={handleSendMessage}
+              onRetryMessage={handleRetryMessage}
               isLoading={isLoading}
               streamingMessage={streamingMessage}
               onNewChat={handleNewChat}

@@ -11,7 +11,9 @@ import {
   ShieldAlert, 
   Sparkles, 
   Trash2,
-  PhoneCall
+  PhoneCall,
+  RotateCcw,
+  AlertCircle
 } from "lucide-react";
 import { containsCrisisSignals } from "@/lib/safety";
 
@@ -25,6 +27,7 @@ const STARTER_PROMPTS = [
 export default function ChatView({
   messages,
   onSendMessage,
+  onRetryMessage,
   isLoading,
   streamingMessage,
   onNewChat,
@@ -44,7 +47,7 @@ export default function ChatView({
   }, [messages, streamingMessage]);
 
   const handleSubmit = (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     if (!input.trim() || isLoading) return;
 
     const text = input.trim();
@@ -53,6 +56,13 @@ export default function ChatView({
     }
     setInput("");
     onSendMessage(text);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
+    }
   };
 
   const handlePromptClick = (prompt) => {
@@ -106,42 +116,79 @@ export default function ChatView({
           {/* Render All Messages */}
           {messages.map((msg, index) => {
             const isUser = msg.role === "user";
+            const isFailed = isUser && msg.status === "failed";
+            const isPending = isUser && msg.status === "pending";
+
             return (
-              <div
-                key={index}
-                className={`flex gap-3 sm:gap-4 ${isUser ? "flex-row-reverse" : "flex-row"}`}
-              >
+              <div key={msg.id || index} className="space-y-1.5">
                 <div
-                  className={`flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-2xl flex items-center justify-center shadow-sm ${
-                    isUser
-                      ? "bg-violet-600 text-white"
-                      : "bg-fuchsia-100 border border-fuchsia-200 text-fuchsia-700"
-                  }`}
+                  className={`flex gap-3 sm:gap-4 ${isUser ? "flex-row-reverse" : "flex-row"}`}
                 >
-                  {isUser ? (
-                    <User size={18} strokeWidth={2} />
-                  ) : (
-                    <Smile size={18} strokeWidth={2} />
-                  )}
+                  <div
+                    className={`flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-2xl flex items-center justify-center shadow-sm ${
+                      isUser
+                        ? isFailed
+                          ? "bg-rose-600 text-white"
+                          : "bg-violet-600 text-white"
+                        : "bg-fuchsia-100 border border-fuchsia-200 text-fuchsia-700"
+                    }`}
+                  >
+                    {isUser ? (
+                      <User size={18} strokeWidth={2} />
+                    ) : (
+                      <Smile size={18} strokeWidth={2} />
+                    )}
+                  </div>
+
+                  <div
+                    className={`max-w-[85%] sm:max-w-[78%] rounded-3xl px-5 sm:px-6 py-3.5 sm:py-4 shadow-sm ${
+                      isUser
+                        ? isFailed
+                          ? "bg-rose-600 text-white rounded-tr-sm"
+                          : "bg-violet-600 text-white rounded-tr-sm"
+                        : "bg-white text-slate-900 rounded-tl-sm border border-violet-100/80"
+                    }`}
+                  >
+                    {isUser ? (
+                      <p className="text-sm sm:text-base leading-relaxed whitespace-pre-wrap">
+                        {msg.content}
+                      </p>
+                    ) : (
+                      <div className="prose prose-violet prose-sm sm:prose-base max-w-none prose-p:leading-relaxed prose-headings:font-bold prose-headings:text-violet-950 prose-a:text-violet-600 prose-blockquote:border-l-violet-400 prose-blockquote:bg-violet-50/50 prose-blockquote:py-1 prose-blockquote:px-3 prose-blockquote:rounded-r-lg">
+                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                <div
-                  className={`max-w-[85%] sm:max-w-[78%] rounded-3xl px-5 sm:px-6 py-3.5 sm:py-4 shadow-sm ${
-                    isUser
-                      ? "bg-violet-600 text-white rounded-tr-sm"
-                      : "bg-white text-slate-900 rounded-tl-sm border border-violet-100/80"
-                  }`}
-                >
-                  {isUser ? (
-                    <p className="text-sm sm:text-base leading-relaxed whitespace-pre-wrap">
-                      {msg.content}
-                    </p>
-                  ) : (
-                    <div className="prose prose-violet prose-sm sm:prose-base max-w-none prose-p:leading-relaxed prose-headings:font-bold prose-headings:text-violet-950 prose-a:text-violet-600 prose-blockquote:border-l-violet-400 prose-blockquote:bg-violet-50/50 prose-blockquote:py-1 prose-blockquote:px-3 prose-blockquote:rounded-r-lg">
-                      <ReactMarkdown>{msg.content}</ReactMarkdown>
-                    </div>
-                  )}
-                </div>
+                {/* Failed Message Status & Explicit Retry Button */}
+                {isFailed && (
+                  <div className="flex items-center justify-end gap-2 px-3 sm:px-4">
+                    <span className="inline-flex items-center gap-1 text-xs text-rose-600 font-medium bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-500" />
+                      Failed to send
+                    </span>
+                    {onRetryMessage && (
+                      <button
+                        onClick={() => onRetryMessage(msg)}
+                        disabled={isLoading}
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-violet-700 bg-violet-100 hover:bg-violet-200 px-3 py-0.5 rounded-full border border-violet-200 transition-colors disabled:opacity-50 cursor-pointer shadow-xs active:scale-95"
+                        title="Retry sending this message"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        Retry
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Pending Sending Indicator */}
+                {isPending && (
+                  <div className="flex items-center justify-end gap-1.5 px-3 sm:px-4 text-xs text-slate-400">
+                    <Loader2 className="w-3 h-3 animate-spin text-violet-500" />
+                    <span>Sending...</span>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -206,13 +253,14 @@ export default function ChatView({
           onSubmit={handleSubmit}
           className="flex items-center gap-2 sm:gap-3 max-w-4xl mx-auto relative"
         >
-          <input
-            type="text"
+          <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Type what's on your mind... (MindMate is here to listen)"
+            onKeyDown={handleKeyDown}
+            rows={1}
+            placeholder="Type what's on your mind... (Press Enter to send, Shift+Enter for new line)"
             disabled={isLoading}
-            className="flex-1 bg-violet-50/50 border border-violet-200/80 rounded-full px-5 sm:px-6 py-3.5 sm:py-4 focus:outline-none focus:ring-2 focus:ring-violet-400/50 text-slate-800 placeholder:text-violet-400 disabled:opacity-50 transition-all text-sm sm:text-base shadow-sm"
+            className="flex-1 bg-violet-50/50 border border-violet-200/80 rounded-2xl sm:rounded-3xl px-5 sm:px-6 py-3.5 focus:outline-none focus:ring-2 focus:ring-violet-400/50 text-slate-800 placeholder:text-violet-400 disabled:opacity-50 transition-all text-sm sm:text-base shadow-sm resize-none max-h-32"
           />
           <button
             type="submit"
