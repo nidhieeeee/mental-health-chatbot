@@ -28,6 +28,7 @@ import JournalView from "@/components/JournalView";
 import WellnessTools from "@/components/WellnessTools";
 import CrisisModal from "@/components/CrisisModal";
 import CrisisBanner from "@/components/CrisisBanner";
+import ConfirmationDialog from "@/components/ConfirmationDialog";
 import { containsCrisisSignals } from "@/lib/safety";
 
 export default function Home() {
@@ -49,6 +50,10 @@ export default function Home() {
   // Safety & Crisis Modals
   const [isCrisisModalOpen, setIsCrisisModalOpen] = useState(false);
   const [showCrisisBanner, setShowCrisisBanner] = useState(false);
+
+  // New Chat Confirmation Modal
+  const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
+  const [isCreatingNewChat, setIsCreatingNewChat] = useState(false);
 
   // Subscribe to user Firestore data on auth change
   useEffect(() => {
@@ -328,27 +333,45 @@ export default function Home() {
     }
   };
 
-  const handleNewChat = async () => {
+  // Open the New Chat Confirmation Dialog
+  const handleNewChat = () => {
     if (!user) return;
-    if (
-      !window.confirm(
-        "Are you sure you want to start a new chat? This will clear your current conversation history."
-      )
-    )
-      return;
+    setIsNewChatModalOpen(true);
+  };
 
-    setIsLoading(true);
+  // Confirm and start fresh conversation, archiving existing history
+  const handleConfirmNewChat = async () => {
+    if (!user || isCreatingNewChat) return;
+
+    setIsCreatingNewChat(true);
     try {
+      // 1. Archive current conversation if real messages exist
+      const activeMessages = messages.filter((m) => m.id !== "welcome-message");
+      if (activeMessages.length > 0) {
+        const firstUserMsg = activeMessages.find((m) => m.role === "user");
+        const title = firstUserMsg?.content?.slice(0, 80) || "Conversation";
+        await addDoc(collection(db, "users", user.uid, "chat_history"), {
+          title,
+          createdAt: Date.now(),
+          messageCount: activeMessages.length,
+          messages: activeMessages,
+        });
+      }
+
+      // 2. Clear active messages so conversation starts completely fresh
       const msgsQuery = query(collection(db, "users", user.uid, "messages"));
       const snapshot = await getDocs(msgsQuery);
       const deletePromises = snapshot.docs.map((document) =>
         deleteDoc(doc(db, "users", user.uid, "messages", document.id))
       );
       await Promise.all(deletePromises);
+
+      // 3. Close confirmation dialog
+      setIsNewChatModalOpen(false);
     } catch (err) {
-      console.error("Error clearing chat session:", err);
+      console.error("Error creating new chat session:", err);
     } finally {
-      setIsLoading(false);
+      setIsCreatingNewChat(false);
     }
   };
 
@@ -465,6 +488,18 @@ export default function Home() {
   // Authenticated Main View
   return (
     <main className="flex h-screen flex-col bg-slate-50 font-sans relative overflow-hidden">
+      {/* New Chat Confirmation Dialog */}
+      <ConfirmationDialog
+        isOpen={isNewChatModalOpen}
+        onClose={() => !isCreatingNewChat && setIsNewChatModalOpen(false)}
+        onConfirm={handleConfirmNewChat}
+        isLoading={isCreatingNewChat}
+        title="Start a New Chat?"
+        description="Are you sure you want to start a new conversation? Your current conversation will be saved in your chat history so you can revisit it anytime."
+        confirmText="Start New Chat"
+        cancelText="Cancel"
+      />
+
       {/* Crisis Modal Dialog */}
       <CrisisModal
         isOpen={isCrisisModalOpen}

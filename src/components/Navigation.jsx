@@ -71,15 +71,6 @@ export function SidebarNav({ activeTab, setActiveTab }) {
           })}
         </nav>
       </div>
-
-      <div className="p-4 rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 text-white text-xs space-y-2">
-        <div className="font-bold flex items-center gap-1.5">
-          <Sparkles className="w-3.5 h-3.5" /> MindMate Philosophy
-        </div>
-        <p className="text-violet-100 leading-relaxed text-[11px]">
-          Empathetic dialogue combined with somatic regulation leads to sustainable emotional wellbeing.
-        </p>
-      </div>
     </aside>
   );
 }
