@@ -495,6 +495,7 @@ export default function Home() {
         <section className="flex-1 overflow-hidden flex flex-col bg-slate-50">
           {activeTab === "chat" && (
             <ChatView
+              user={user}
               messages={messages}
               onSendMessage={handleSendMessage}
               onRetryMessage={handleRetryMessage}

@@ -1,6 +1,7 @@
 "use client";
 
-import { Smile, ShieldAlert, LogOut, PlusCircle } from "lucide-react";
+import { useState } from "react";
+import { Smile, ShieldAlert, LogOut, PlusCircle, User } from "lucide-react";
 
 export default function Header({
   user,
@@ -9,6 +10,9 @@ export default function Header({
   onOpenCrisisModal,
   onLogout
 }) {
+  const [imgError, setImgError] = useState(false);
+  const avatarUrl = user?.photoURL || user?.providerData?.[0]?.photoURL;
+
   return (
     <header className="px-4 sm:px-8 py-3.5 sm:py-4 border-b border-violet-100 bg-white/90 backdrop-blur-md flex items-center justify-between gap-4 z-20 shadow-xs sticky top-0">
       <div className="flex items-center gap-3">
@@ -51,13 +55,25 @@ export default function Header({
           </button>
         )}
 
-        {/* User Avatar */}
-        {user?.photoURL && (
+        {/* User Avatar with Google Referrer Policy Fix & Fallback */}
+        {avatarUrl && !imgError ? (
           <img
-            src={user.photoURL}
-            alt={user.displayName || "User"}
+            src={avatarUrl}
+            alt={user?.displayName || "User"}
+            referrerPolicy="no-referrer"
+            onError={() => setImgError(true)}
             className="w-8 h-8 rounded-full border border-violet-200 shadow-xs object-cover"
           />
+        ) : (
+          <div className="w-8 h-8 rounded-full bg-violet-100 border border-violet-200 text-violet-700 flex items-center justify-center font-bold text-xs shadow-xs">
+            {user?.displayName ? (
+              user.displayName.charAt(0).toUpperCase()
+            ) : user?.email ? (
+              user.email.charAt(0).toUpperCase()
+            ) : (
+              <User size={16} />
+            )}
+          </div>
         )}
 
         {/* Sign Out */}

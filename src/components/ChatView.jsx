@@ -25,6 +25,7 @@ const STARTER_PROMPTS = [
 ];
 
 export default function ChatView({
+  user,
   messages,
   onSendMessage,
   onRetryMessage,
@@ -37,6 +38,9 @@ export default function ChatView({
   const [input, setInput] = useState("");
   const messagesEndRef = useRef(null);
   const [showLocalCrisisAlert, setShowLocalCrisisAlert] = useState(false);
+  const [userImgError, setUserImgError] = useState(false);
+
+  const avatarUrl = user?.photoURL || user?.providerData?.[0]?.photoURL;
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -125,7 +129,7 @@ export default function ChatView({
                   className={`flex gap-3 sm:gap-4 ${isUser ? "flex-row-reverse" : "flex-row"}`}
                 >
                   <div
-                    className={`flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-2xl flex items-center justify-center shadow-sm ${
+                    className={`flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-2xl flex items-center justify-center shadow-sm overflow-hidden ${
                       isUser
                         ? isFailed
                           ? "bg-rose-600 text-white"
@@ -134,7 +138,17 @@ export default function ChatView({
                     }`}
                   >
                     {isUser ? (
-                      <User size={18} strokeWidth={2} />
+                      avatarUrl && !userImgError ? (
+                        <img
+                          src={avatarUrl}
+                          alt={user?.displayName || "User"}
+                          referrerPolicy="no-referrer"
+                          onError={() => setUserImgError(true)}
+                          className="w-full h-full object-cover rounded-2xl"
+                        />
+                      ) : (
+                        <User size={18} strokeWidth={2} />
+                      )
                     ) : (
                       <Smile size={18} strokeWidth={2} />
                     )}
